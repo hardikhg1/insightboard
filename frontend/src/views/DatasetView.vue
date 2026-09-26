@@ -133,8 +133,8 @@ async function deleteDataset() {
   deleting.value = true
   try {
     await api.delete(`/datasets/${route.params.id}/`)
-    // Navigate back to the home page after successful delete
-    router.push('/')
+    // Navigate home with ?deleted=1 so HomeView shows a success toast
+    router.push({ path: '/', query: { deleted: '1' } })
   } catch {
     showDeleteModal.value = false
     error.value = 'Delete failed. Please try again.'

@@ -25,7 +25,7 @@
         />
         <div v-if="!file" class="drop-content">
           <span class="drop-icon">☁️</span>
-          <p>Drag & drop a CSV here, or <strong>click to browse</strong></p>
+          <p>Drag &amp; drop a CSV here, or <strong>click to browse</strong></p>
           <p class="drop-hint">Only .csv files are supported</p>
         </div>
         <div v-else class="drop-content">
@@ -35,24 +35,24 @@
         </div>
       </div>
 
+      <!-- Upload progress bar (visible while uploading) -->
+      <div v-if="uploading" class="progress-bar-wrap">
+        <div class="progress-bar"></div>
+      </div>
+
       <!-- Submit button -->
       <button
-        class="btn-primary"
-        style="margin-top: var(--space-5); width: 100%; justify-content: center;"
+        class="btn-primary upload-btn"
         :disabled="!file || uploading"
         @click="upload"
       >
-        <span v-if="uploading">Uploading…</span>
-        <span v-else>Upload & Analyse</span>
+        <span v-if="uploading" class="btn-spinner"></span>
+        <span>{{ uploading ? 'Uploading…' : 'Upload &amp; Analyse' }}</span>
       </button>
 
-      <!-- Feedback messages -->
-      <div v-if="error"   class="error-box"   style="margin-top:var(--space-4)">{{ error }}</div>
-      <div v-if="success" class="success-box" style="margin-top:var(--space-4)">
-        ✅ {{ success }}
-        <RouterLink :to="`/datasets/${uploadedId}`" class="btn-secondary" style="margin-top:var(--space-3); display:inline-flex;">
-          View Dataset →
-        </RouterLink>
+      <!-- Inline error (for upload-specific errors) -->
+      <div v-if="error" class="error-box" style="margin-top:var(--space-4)">
+        {{ error }}
       </div>
     </div>
   </section>
@@ -60,26 +60,29 @@
 
 <script setup>
 import { ref } from 'vue'
+import { useRouter } from 'vue-router'
 import api from '@/axios'
+import { useToast } from '@/composables/useToast'
 
-const file       = ref(null)   // the File object selected by the user
+const router = useRouter()
+const { success: showSuccess, error: showError } = useToast()
+
+const file       = ref(null)
 const uploading  = ref(false)
 const error      = ref(null)
-const success    = ref(null)
-const uploadedId = ref(null)
 const isDragging = ref(false)
 
 function onFileChange(e) {
   file.value  = e.target.files[0] || null
   error.value = null
-  success.value = null
 }
 
 function onDrop(e) {
   isDragging.value = false
   const dropped = e.dataTransfer.files[0]
   if (dropped && dropped.name.endsWith('.csv')) {
-    file.value = dropped
+    file.value  = dropped
+    error.value = null
   } else {
     error.value = 'Please drop a .csv file.'
   }
@@ -87,17 +90,10 @@ function onDrop(e) {
 
 async function upload() {
   if (!file.value) return
-
-  error.value   = null
-  success.value = null
+  error.value     = null
   uploading.value = true
 
   try {
-    /*
-      FormData is how you send a file via HTTP in JavaScript.
-      The key name 'file' must match what the Django view reads:
-        request.FILES.get('file')
-    */
     const form = new FormData()
     form.append('file', file.value)
 
@@ -105,11 +101,25 @@ async function upload() {
       headers: { 'Content-Type': 'multipart/form-data' }
     })
 
-    uploadedId.value = response.data.id
-    success.value = `"${response.data.name}" uploaded — ${response.data.row_count} rows, ${response.data.column_count} columns.`
+    const ds = response.data
+    // Show a success toast — it will auto-dismiss in 3.5 s
+    showSuccess(`"${ds.name}" uploaded — ${ds.row_count} rows, ${ds.column_count} columns.`)
     file.value = null
+
+    // Auto-navigate to the new dataset's detail page
+    router.push(`/datasets/${ds.id}`)
+
   } catch (err) {
-    error.value = err.response?.data?.error || 'Upload failed. Please try again.'
+    // The global interceptor already handles 500/network errors.
+    // Handle upload-specific errors (400) inline in the card.
+    const msg = err.response?.data?.error
+    if (err.response?.status === 400 && msg) {
+      error.value = msg
+    } else if (err.response?.status !== 500 && err.response) {
+      error.value = 'Upload failed. Please check the file and try again.'
+      showError(error.value)
+    }
+    // If err.response is undefined (network error), the interceptor handles it
   } finally {
     uploading.value = false
   }
@@ -119,9 +129,7 @@ async function upload() {
 <style scoped>
 .section { padding-block: var(--space-10); }
 
-.upload-card {
-  max-width: 560px;
-}
+.upload-card { max-width: 560px; }
 
 /* Drop zone */
 .drop-zone {
@@ -132,20 +140,63 @@ async function upload() {
   cursor: pointer;
   transition: border-color var(--transition-base), background var(--transition-base);
 }
-
 .drop-zone:hover,
 .drop-zone--active {
   border-color: var(--accent-from);
   background: rgba(99, 102, 241, 0.05);
 }
-
 .drop-zone--selected {
   border-color: var(--color-success);
   background: rgba(16, 185, 129, 0.05);
 }
-
 .drop-content { display: flex; flex-direction: column; align-items: center; gap: var(--space-3); }
 .drop-icon    { font-size: 2.5rem; }
 .drop-hint    { font-size: 0.8rem; color: var(--color-text-muted); }
 .file-name    { font-weight: 600; color: var(--color-success); }
+
+/* Progress bar */
+.progress-bar-wrap {
+  margin-top: var(--space-4);
+  height: 4px;
+  background: var(--color-border);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.progress-bar {
+  height: 100%;
+  background: var(--accent-gradient);
+  border-radius: 999px;
+  animation: progress-slide 1.2s ease-in-out infinite;
+  width: 40%;
+}
+@keyframes progress-slide {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(300%); }
+}
+
+/* Upload button */
+.upload-btn {
+  margin-top: var(--space-5);
+  width: 100%;
+  justify-content: center;
+  gap: var(--space-3);
+}
+
+/* Spinner inside button */
+.btn-spinner {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(255,255,255,0.4);
+  border-top-color: #fff;
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Responsive */
+@media (max-width: 600px) {
+  .upload-card { max-width: 100%; }
+  .drop-zone { padding: var(--space-8) var(--space-4); }
+}
 </style>

@@ -249,3 +249,45 @@ select.input {
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
+
+/* ── Responsive breakpoints ──────────────────────────────────────────── */
+
+/* Tablet and below */
+@media (max-width: 768px) {
+  .container {
+    padding-inline: var(--space-4);
+  }
+
+  .page-title {
+    font-size: 1.4rem;
+  }
+
+  .card {
+    padding: var(--space-5);
+  }
+}
+
+/* Mobile */
+@media (max-width: 480px) {
+  :root {
+    /* Slightly tighter spacing on small screens */
+    --space-10: 32px;
+    --space-12: 40px;
+  }
+
+  .page-title { font-size: 1.2rem; }
+  .page-subtitle { font-size: 0.88rem; }
+
+  .btn-primary,
+  .btn-secondary {
+    font-size: 0.85rem;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .card { border-radius: var(--radius-md); }
+}
+
+/* Wide screens — cap the container and center it */
+@media (min-width: 1400px) {
+  .container { max-width: 1320px; }
+}
