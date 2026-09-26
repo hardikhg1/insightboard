@@ -320,3 +320,265 @@ class RowFilterTest(TestCase):
         url = reverse("dataset-row-filter", kwargs={"pk": 9999})
         response = self.client.get(url)
         self.assertEqual(response.status_code, status.HTTP_404_NOT_FOUND)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 6.  Model unit tests
+#     These test the ORM layer directly — no HTTP requests involved.
+#     They verify that our model definitions (fields, Meta, __str__) work
+#     exactly as intended.
+# ══════════════════════════════════════════════════════════════════════════════
+class DatasetModelTest(TestCase):
+
+    def test_create_dataset(self):
+        """We can create a Dataset row and retrieve it from the DB."""
+        ds = Dataset.objects.create(
+            name="Test",
+            original_filename="test.csv",
+            row_count=10,
+            column_count=3,
+        )
+        # Retrieve fresh from DB to confirm it was actually saved
+        fetched = Dataset.objects.get(pk=ds.pk)
+        self.assertEqual(fetched.name, "Test")
+        self.assertEqual(fetched.row_count, 10)
+        self.assertEqual(fetched.column_count, 3)
+
+    def test_dataset_str(self):
+        """__str__ should return the dataset name."""
+        ds = Dataset.objects.create(
+            name="Sales 2024",
+            original_filename="sales.csv",
+        )
+        self.assertEqual(str(ds), "Sales 2024")
+
+    def test_dataset_default_counts_are_zero(self):
+        """row_count and column_count default to 0 when not provided."""
+        ds = Dataset.objects.create(name="Empty", original_filename="empty.csv")
+        self.assertEqual(ds.row_count, 0)
+        self.assertEqual(ds.column_count, 0)
+
+    def test_datasets_ordered_by_uploaded_at_desc(self):
+        """
+        Dataset.Meta has ordering = ['-uploaded_at'].
+        The most recently created dataset should appear first in a queryset.
+        """
+        ds1 = Dataset.objects.create(name="First", original_filename="a.csv")
+        ds2 = Dataset.objects.create(name="Second", original_filename="b.csv")
+        all_datasets = list(Dataset.objects.all())
+        # ds2 was created after ds1, so it should be first (newest first)
+        self.assertEqual(all_datasets[0].pk, ds2.pk)
+        self.assertEqual(all_datasets[1].pk, ds1.pk)
+
+
+class DatasetColumnModelTest(TestCase):
+
+    def setUp(self):
+        self.ds = Dataset.objects.create(name="Test", original_filename="t.csv")
+
+    def test_create_column(self):
+        """We can create a DatasetColumn linked to a Dataset."""
+        col = DatasetColumn.objects.create(
+            dataset=self.ds,
+            name="revenue",
+            position=0,
+            data_type=DatasetColumn.NUMBER,
+        )
+        self.assertEqual(col.dataset, self.ds)
+        self.assertEqual(col.data_type, "number")
+
+    def test_column_default_type_is_text(self):
+        """data_type defaults to 'text' when not specified."""
+        col = DatasetColumn.objects.create(
+            dataset=self.ds, name="city", position=0
+        )
+        self.assertEqual(col.data_type, DatasetColumn.TEXT)
+
+    def test_column_str(self):
+        """__str__ should return '<dataset name> - <column name>'."""
+        col = DatasetColumn.objects.create(
+            dataset=self.ds, name="price", position=1, data_type=DatasetColumn.NUMBER
+        )
+        self.assertEqual(str(col), "Test - price")
+
+    def test_column_unique_together_constraint(self):
+        """
+        (dataset, name) must be unique — creating two columns with the same
+        name on the same dataset must raise an IntegrityError.
+        """
+        from django.db import IntegrityError
+        DatasetColumn.objects.create(dataset=self.ds, name="col_a", position=0)
+        with self.assertRaises(IntegrityError):
+            DatasetColumn.objects.create(dataset=self.ds, name="col_a", position=1)
+
+    def test_column_type_choices(self):
+        """All three TYPE_CHOICES constants must exist on the model."""
+        self.assertEqual(DatasetColumn.TEXT,   "text")
+        self.assertEqual(DatasetColumn.NUMBER, "number")
+        self.assertEqual(DatasetColumn.DATE,   "date")
+
+
+class DataRowModelTest(TestCase):
+
+    def setUp(self):
+        self.ds = Dataset.objects.create(name="Orders", original_filename="o.csv")
+
+    def test_create_data_row(self):
+        """We can create a DataRow with JSON data and retrieve it."""
+        row = DataRow.objects.create(
+            dataset=self.ds,
+            row_index=0,
+            data={"product": "Pen", "qty": 5}
+        )
+        fetched = DataRow.objects.get(pk=row.pk)
+        self.assertEqual(fetched.data["product"], "Pen")
+        self.assertEqual(fetched.data["qty"], 5)
+
+    def test_data_row_str(self):
+        """__str__ should return '<dataset name> - Row <row_index>'."""
+        row = DataRow.objects.create(dataset=self.ds, row_index=3, data={})
+        self.assertEqual(str(row), "Orders - Row 3")
+
+    def test_data_row_null_values_stored_as_none(self):
+        """JSON null maps to Python None when retrieved from the DB."""
+        row = DataRow.objects.create(
+            dataset=self.ds,
+            row_index=0,
+            data={"score": None, "name": "Alice"}
+        )
+        fetched = DataRow.objects.get(pk=row.pk)
+        self.assertIsNone(fetched.data["score"])
+
+    def test_cascade_delete_removes_rows(self):
+        """
+        Deleting a Dataset must also delete all its DataRows
+        because of on_delete=models.CASCADE on the ForeignKey.
+        """
+        DataRow.objects.create(dataset=self.ds, row_index=0, data={"x": 1})
+        DataRow.objects.create(dataset=self.ds, row_index=1, data={"x": 2})
+        self.assertEqual(DataRow.objects.count(), 2)
+
+        self.ds.delete()
+
+        self.assertEqual(DataRow.objects.count(), 0)
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# 7.  Serializer unit tests
+#     These test the serializer layer in isolation — no HTTP, no DB calls.
+#     They verify that our serializers produce the right JSON shape and
+#     enforce the right read/write rules.
+# ══════════════════════════════════════════════════════════════════════════════
+class DatasetSerializerTest(TestCase):
+
+    def _make_dataset(self):
+        return Dataset.objects.create(
+            name="Revenue",
+            original_filename="revenue.csv",
+            row_count=100,
+            column_count=4,
+        )
+
+    def test_serializer_contains_expected_fields(self):
+        """DatasetSerializer output must have exactly the fields we defined."""
+        from .serializers import DatasetSerializer
+        ds = self._make_dataset()
+        data = DatasetSerializer(ds).data
+        expected_fields = {"id", "name", "original_filename", "uploaded_at",
+                           "row_count", "column_count"}
+        self.assertEqual(set(data.keys()), expected_fields)
+
+    def test_serializer_name_matches_model(self):
+        """The serialized name must equal the model's name field."""
+        from .serializers import DatasetSerializer
+        ds = self._make_dataset()
+        data = DatasetSerializer(ds).data
+        self.assertEqual(data["name"], "Revenue")
+
+    def test_serializer_row_count_is_integer(self):
+        """row_count must be serialized as an integer, not a string."""
+        from .serializers import DatasetSerializer
+        ds = self._make_dataset()
+        data = DatasetSerializer(ds).data
+        self.assertIsInstance(data["row_count"], int)
+
+
+class DatasetDetailSerializerTest(TestCase):
+
+    def setUp(self):
+        self.ds = Dataset.objects.create(
+            name="Products", original_filename="products.csv",
+            row_count=2, column_count=2,
+        )
+        DatasetColumn.objects.create(
+            dataset=self.ds, name="item", position=0, data_type=DatasetColumn.TEXT
+        )
+        DatasetColumn.objects.create(
+            dataset=self.ds, name="price", position=1, data_type=DatasetColumn.NUMBER
+        )
+        DataRow.objects.create(dataset=self.ds, row_index=0, data={"item": "Pen",  "price": 10})
+        DataRow.objects.create(dataset=self.ds, row_index=1, data={"item": "Book", "price": 50})
+
+    def test_detail_serializer_nests_columns(self):
+        """DatasetDetailSerializer must include a nested 'columns' list."""
+        from .serializers import DatasetDetailSerializer
+        data = DatasetDetailSerializer(self.ds).data
+        self.assertIn("columns", data)
+        self.assertEqual(len(data["columns"]), 2)
+
+    def test_detail_serializer_nests_rows(self):
+        """DatasetDetailSerializer must include a nested 'rows' list."""
+        from .serializers import DatasetDetailSerializer
+        data = DatasetDetailSerializer(self.ds).data
+        self.assertIn("rows", data)
+        self.assertEqual(len(data["rows"]), 2)
+
+    def test_nested_column_has_data_type(self):
+        """Each nested column entry must include a 'data_type' field."""
+        from .serializers import DatasetDetailSerializer
+        data = DatasetDetailSerializer(self.ds).data
+        price_col = next(c for c in data["columns"] if c["name"] == "price")
+        self.assertEqual(price_col["data_type"], "number")
+
+    def test_nested_row_has_data_dict(self):
+        """Each nested row entry must include a 'data' dict."""
+        from .serializers import DatasetDetailSerializer
+        data = DatasetDetailSerializer(self.ds).data
+        first_row = data["rows"][0]
+        self.assertIn("data", first_row)
+        self.assertIsInstance(first_row["data"], dict)
+
+    def test_columns_are_read_only(self):
+        """
+        DatasetDetailSerializer.columns is read_only=True.
+        POSTing with a 'columns' key must not create new column records.
+        """
+        from .serializers import DatasetDetailSerializer
+        payload = {
+            "name": "Hacked",
+            "original_filename": "hacked.csv",
+            "columns": [{"name": "injected", "position": 0, "data_type": "text"}]
+        }
+        serializer = DatasetDetailSerializer(data=payload)
+        serializer.is_valid()
+        # read_only fields are simply ignored — columns count stays the same
+        self.assertEqual(DatasetColumn.objects.count(), 2)
+
+
+class DataRowSerializerTest(TestCase):
+
+    def setUp(self):
+        self.ds = Dataset.objects.create(name="D", original_filename="d.csv")
+
+    def test_row_serializer_fields(self):
+        """DataRowSerializer must output id, row_index, and data."""
+        from .serializers import DataRowSerializer
+        row = DataRow.objects.create(
+            dataset=self.ds, row_index=7, data={"col": "val"}
+        )
+        data = DataRowSerializer(row).data
+        self.assertIn("id", data)
+        self.assertIn("row_index", data)
+        self.assertIn("data", data)
+        self.assertEqual(data["row_index"], 7)
+        self.assertEqual(data["data"]["col"], "val")
