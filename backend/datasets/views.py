@@ -1,3 +1,8 @@
-from django.shortcuts import render
+from rest_framework import generics
+from .models import Dataset
+from .serializers import DatasetSerializer
 
-# Create your views here.
+
+class DatasetListCreateView(generics.ListCreateAPIView):
+    queryset = Dataset.objects.all()
+    serializer_class = DatasetSerializer
