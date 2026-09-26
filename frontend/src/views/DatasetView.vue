@@ -54,15 +54,16 @@
         :dataset-id="dataset.id"
       />
 
-      <!-- ── Charts placeholder (Step 9) ───────────────────────── -->
+      <!-- ── Chart Panel (Step 9) ─────────────────────────────── -->
       <div class="section-heading" style="margin-top: var(--space-10)">
         <h2 class="section-title">Visualisations</h2>
-        <p class="section-sub">📈 Chart.js charts will be added in Step 9.</p>
+        <p class="section-sub">Pick a column and chart type to explore your data visually.</p>
       </div>
-      <div class="card chart-placeholder">
-        <span class="chart-placeholder-icon">📊</span>
-        <p>Charts coming in Step 9</p>
-      </div>
+
+      <ChartPanel
+        :columns="dataset.columns"
+        :dataset-id="dataset.id"
+      />
 
     </template>
 
@@ -100,7 +101,8 @@
 import { ref, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import api from '@/axios'
-import DataTable from '@/components/DataTable.vue'
+import DataTable   from '@/components/DataTable.vue'
+import ChartPanel  from '@/components/ChartPanel.vue'
 
 const route   = useRoute()
 const router  = useRouter()
@@ -210,19 +212,7 @@ async function deleteDataset() {
   color: var(--color-text-muted);
 }
 
-/* ── Chart placeholder ── */
-.chart-placeholder {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: var(--space-3);
-  min-height: 160px;
-  color: var(--color-text-muted);
-  font-size: 0.9rem;
-}
 
-.chart-placeholder-icon { font-size: 2.5rem; }
 
 /* ── Delete modal ── */
 .modal-backdrop {
