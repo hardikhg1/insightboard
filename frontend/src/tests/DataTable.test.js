@@ -29,14 +29,6 @@ const ROWS = [
   { id: 4, row_index: 3, data: { product: 'Eraser', revenue: 50  } }
 ]
 
-function mountTable(apiRows = ROWS) {
-  const api = require('@/axios').default
-  api.get.mockResolvedValue({ data: apiRows })
-  return mount(DataTable, {
-    props: { columns: COLUMNS, datasetId: 1 }
-  })
-}
-
 describe('DataTable', () => {
   let api
 

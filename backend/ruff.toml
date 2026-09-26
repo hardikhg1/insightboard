@@ -1,0 +1,28 @@
+# ruff.toml — Ruff linter configuration for InsightBoard backend
+#
+# Ruff is a fast Python linter. This file customises its behaviour so
+# that Django/DRF idioms (mutable class attributes, broad exception catches
+# on external I/O) are not flagged as errors.
+
+# Top-level settings
+line-length = 105
+
+[lint]
+select = ["E", "F", "I", "W", "RUF"]
+
+ignore = [
+    # RUF012 — "Mutable default value for class attribute":
+    #   Django Model.Meta, serializer Meta.fields, and DRF parser_classes
+    #   are ALL idiomatic mutable class attributes. Ruff flagging them is a
+    #   false positive in a Django project.
+    "RUF012",
+
+    # BLE001 — "Do not catch blind exception: Exception":
+    #   Our CSV upload catches `Exception` intentionally because pandas can
+    #   raise many different errors (EmptyDataError, ParserError, etc.).
+    #   Catching the base class is the correct pattern for user-facing I/O.
+    "BLE001",
+]
+
+# Exclude auto-generated migration files — we never touch those manually.
+exclude = ["*/migrations/*"]

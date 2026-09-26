@@ -1,6 +1,3 @@
-/* eslint-env node */
-require('@rushstack/eslint-patch/modern-module-resolution')
-
 module.exports = {
   root: true,
   env: { browser: true, es2022: true, node: true },
@@ -10,6 +7,11 @@ module.exports = {
   ],
   parserOptions: { ecmaVersion: 'latest', sourceType: 'module' },
   rules: {
-    'vue/multi-word-component-names': 'off'
+    // Allow single-word component names (NavBar, DataTable etc.)
+    'vue/multi-word-component-names': 'off',
+    // Allow unused vars that start with _ (common convention for ignored params)
+    'no-unused-vars': ['warn', { argsIgnorePattern: '^_' }],
+    // Relax some Vue rules for beginner-friendly code
+    'vue/html-self-closing': ['warn', { html: { void: 'always', normal: 'never' } }]
   }
 }
