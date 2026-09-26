@@ -19,4 +19,11 @@ urlpatterns = [
         views.DatasetDetailView.as_view(),
         name='dataset-detail'
     ),
+    # Row filter endpoint: GET /api/datasets/<pk>/rows/
+    # Accepts optional ?column=X&value=Y query params.
+    path(
+        'datasets/<int:pk>/rows/',
+        views.RowFilterView.as_view(),
+        name='dataset-row-filter'
+    ),
 ]

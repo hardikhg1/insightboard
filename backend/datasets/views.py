@@ -1,12 +1,15 @@
 import pandas as pd
 
+from django.shortcuts import get_object_or_404
+
 from rest_framework import generics, status
 from rest_framework.views import APIView
 from rest_framework.response import Response
 from rest_framework.parsers import MultiPartParser, FormParser
 
 from .models import Dataset, DatasetColumn, DataRow
-from .serializers import DatasetSerializer, DatasetDetailSerializer
+from .serializers import DatasetSerializer, DatasetDetailSerializer, DataRowSerializer
+
 
 
 class DatasetListCreateView(generics.ListCreateAPIView):
@@ -138,3 +141,47 @@ class CSVUploadView(APIView):
         # ── 6. Return the new Dataset's metadata ───────────────────────────
         serializer = DatasetSerializer(dataset)
         return Response(serializer.data, status=status.HTTP_201_CREATED)
+
+
+class RowFilterView(APIView):
+    """
+    GET /api/datasets/<pk>/rows/
+    GET /api/datasets/<pk>/rows/?column=product&value=Pen
+
+    Returns DataRow records for the given dataset.
+    If query params `column` and `value` are both provided, only rows
+    whose JSON data contains that column:value pair are returned.
+
+    Why filter in Python (not SQL)?
+    --------------------------------
+    DataRow.data is a JSONField — a blob of JSON stored in one column.
+    Filtering on keys *inside* JSON would require database-specific JSON
+    operators (e.g. PostgreSQL's @> operator). Filtering in Python is
+    simpler to understand and good enough for small-to-medium CSVs.
+    For very large datasets a proper JSON query or a dedicated column
+    index would be the next step.
+    """
+
+    def get(self, request, pk, *args, **kwargs):
+        # get_object_or_404: fetches the Dataset or returns HTTP 404 automatically.
+        dataset = get_object_or_404(Dataset, pk=pk)
+
+        # Start with ALL rows for this dataset, ordered by row_index.
+        rows = dataset.rows.order_by('row_index')
+
+        # Read optional query parameters from the URL
+        # e.g. ?column=product&value=Pen
+        column = request.query_params.get('column')
+        value  = request.query_params.get('value')
+
+        if column and value:
+            # Filter in Python: keep only rows where data[column] == value.
+            # str(v) comparison makes it work whether value was stored as
+            # int/float or string (e.g. "100" matches 100).
+            rows = [
+                row for row in rows
+                if str(row.data.get(column, "")).lower() == value.lower()
+            ]
+
+        serializer = DataRowSerializer(rows, many=True)
+        return Response(serializer.data, status=status.HTTP_200_OK)
